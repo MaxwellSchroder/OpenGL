@@ -23,7 +23,7 @@ void main()
     vec3 temp = vec3(0.0);
 
     //add to ambience
-    temp += 0.2 * texture(imageTexture, fragmentTexCoord).rgb;
+    temp += 0.4 * texture(imageTexture, fragmentTexCoord).rgb;
 
     for (int i = 0; i < 8; i ++) {
         temp += calculatePointLight(Lights[i], fragmentPosition, fragmentNormal);

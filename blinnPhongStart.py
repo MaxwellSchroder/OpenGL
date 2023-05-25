@@ -7,6 +7,8 @@ import numpy as np
 import pyrr
 import ctypes
 from PIL import Image, ImageOps
+from sklearn.preprocessing import normalize
+
 
 ############################## Constants ######################################
 
@@ -107,7 +109,7 @@ class Scene:
 
         self.pyramids = [
             Pyramid(
-                position = [6,0,0],
+                position = [3,0,1],
                 eulers = [0,0,0]
             ),
         ]
@@ -118,20 +120,52 @@ class Scene:
         
         self.lights = [
             Light(
-                position = [4,0,2],
-                color = [1,0,0],
-                strength = 2
+                position = [
+                    3,
+                    0,
+                    2
+                ],
+                color = [
+                    1,
+                    0,
+                    0,
+                    
+                ],
+                strength = 10
             ),
+            
             Light(
-                position = [2,0,1],
-                color = [0,1,0],
-                strength = 2
+                position = [
+                    np.random.uniform(low=0.0,high=9.0),
+                    np.random.uniform(low=-10.0,high=2.0),
+                    np.random.uniform(low=-1.0,high=4.0)
+                ],
+                color = [
+                    0,
+                    0,
+                    1,
+                    
+                ],
+                strength = np.random.uniform(low=1.0,high=5.0)
             ),
+            
             Light(
-                position = [4,4,1],
-                color = [0,0,1],
-                strength = 4
-            )
+                position = [
+                    np.random.uniform(low=0.0,high=9.0),
+                    np.random.uniform(low=-10.0,high=2.0),
+                    np.random.uniform(low=-2.0,high=4.0)
+                ],
+                color = [
+                    0,
+                    1,
+                    0,
+                    
+                ],
+                strength = 5
+            ),
+            
+            
+            
         ]
 
     def update(self, rate):
@@ -292,6 +326,7 @@ class GraphicsEngine:
         self.cube_mesh = Mesh("models/cube.obj")
         self.pyramid_mesh = PyramidMesh()
         self.rocket_mesh = Mesh("models/rocket.obj")
+        self.girl_mesh = Mesh("models/girl.obj")
 
         #initialise opengl
         glClearColor(0.0, 0.0, 0.0, 1)
@@ -350,8 +385,10 @@ class GraphicsEngine:
 
             glUniformMatrix4fv(self.modelMatrixLocation,1,GL_FALSE,pyramid.get_pyramid_model_matrix())
             self.wood_texture.use()
-            glBindVertexArray(self.rocket_mesh.vao)
-            glDrawArrays(GL_TRIANGLES, 0, self.rocket_mesh.vertex_count)
+            
+            #draw triangle
+            glBindVertexArray(self.pyramid_mesh.vao)
+            glDrawArrays(GL_TRIANGLES, 0, self.pyramid_mesh.vertex_count)
 
             glFlush()
 
@@ -383,7 +420,6 @@ class GraphicsEngine:
 
         glFlush()
         
-
     def destroy(self):
 
         self.cube_mesh.destroy()
@@ -537,7 +573,7 @@ class PyramidMesh():
            
             
             #front
-            -1, -1, 1, 0, 1,
+            -1, -1, 1, 0, 1, 
             1, -1, 1, 1, 0,
             0, 1, 0, 0.5, 0,
 
@@ -571,6 +607,10 @@ class PyramidMesh():
         self.vertices = np.array(self.vertices, dtype=np.float32)
         
         self.vertex_count = len(self.vertices) // 5
+        
+        
+        self.calculate_surface_normal()
+        
 
     def create_vertex_buffer_and_push(self):
         '''Create VAO and VBO
@@ -587,6 +627,38 @@ class PyramidMesh():
         if upload_ready:
             # actually push data to array buffer
             glBufferData(GL_ARRAY_BUFFER, self.vertices.nbytes, self.vertices, GL_STATIC_DRAW)
+
+    def calculate_surface_normal(self):
+        #front, right, left, back, bot right, bot left
+        v1 = [-1, -1, 1]
+        v2 = [1, -1, 1]
+        v3 = [0, 1, 0]
+        v4 = [-1, -1, -1]
+        v5 = [1, -1, -1]
+        sides = [
+            [v1,v2,v3],
+            [v2, v3, v5],
+            [v1, v3, v4],
+            [v4, v3, v5],
+            [v1,v2,v5],
+            [v1,v4,v5]
+            
+        ]
+        faces = [
+            "front","right","left","back","botright","botleft"
+        ]
+        index = 0
+        for face in sides:
+            
+            A = np.subtract(face[1],face[0])
+            B = np.subtract(face[2],face[0])
+            Nx = A[1] * B[2] - A[2] * B[2]
+            Ny = A[2] * B[0] - A[0] * B[2]
+            Nz = A[0] * B[1] - A[1] * B[0]
+            print(faces[index])
+            print(normalize([[Nx, Ny, Nz]]))
+            index += 1
+        
         
 
     def explain_to_shader_how_to_read_buffer(self):
@@ -601,7 +673,7 @@ class PyramidMesh():
         elements_per_attribute = 3
         element_type = GL_FLOAT
         normalized = GL_FALSE #to squash the data. never do this
-        stride_in_bytes = 20 #element type size in bytes * elements_per_attribute
+        stride_in_bytes = 32 #element type size in bytes * elements_per_attribute
         offset_in_bytes = 0 # how far into the datastructure is it
         
         glEnableVertexAttribArray(attribute_index)
@@ -618,7 +690,7 @@ class PyramidMesh():
         elements_per_attribute = 2
         element_type = GL_FLOAT
         normalized = GL_FALSE #to squash the data. never do this
-        stride_in_bytes = 20 #element type size in bytes * elements_per_attribute
+        stride_in_bytes = 32 #element type size in bytes * elements_per_attribute
         offset_in_bytes = 12 # how far into the datastructure is it
         
         glEnableVertexAttribArray(attribute_index)
@@ -627,6 +699,11 @@ class PyramidMesh():
             element_type, normalized,
             stride_in_bytes, ctypes.c_void_p(offset_in_bytes)
         )
+        
+        # NORMALS
+        #enable normals
+        glEnableVertexAttribArray(2)
+        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 32, ctypes.c_void_p(20))
 
 class Material:
 
