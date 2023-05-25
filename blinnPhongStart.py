@@ -83,10 +83,12 @@ class Player:
         self.position = np.array(position, dtype = np.float32)
         self.theta = 0
         self.phi = 0
+        #self.forwards = np.array([0,0,0], dtype=np.float32)
         self.update_vectors()
     
     def update_vectors(self):
-
+        #self.forwards = np.array([0,0,0], dtype=np.float32)
+        
         self.forwards = np.array(
             [
                 np.cos(np.deg2rad(self.theta)) * np.cos(np.deg2rad(self.phi)),
@@ -96,6 +98,8 @@ class Player:
             dtype = np.float32
         )
 
+        
+        
         globalUp = np.array([0,0,1], dtype=np.float32)
 
         self.right = np.cross(self.forwards, globalUp)
@@ -109,44 +113,45 @@ class Scene:
 
         self.pyramids = [
             Pyramid(
-                position = [3,0,1],
+                position = [0,0,0],
                 eulers = [0,0,0]
             ),
         ]
 
         self.player = Player(
-            position = [0,0,2]
+            position = [0,-5,0]
         )
+        self.spin_player(90,0)
         
         self.lights = [
             Light(
                 position = [
-                    3,
-                    0,
-                    2
+                    -1,
+                    -2,
+                    1
                 ],
                 color = [
-                    1,
                     0,
+                    1,
                     0,
                     
                 ],
-                strength = 10
+                strength = 2
             ),
             
             Light(
                 position = [
-                    np.random.uniform(low=0.0,high=9.0),
-                    np.random.uniform(low=-10.0,high=2.0),
-                    np.random.uniform(low=-1.0,high=4.0)
+                    1,
+                    1,
+                    1
                 ],
                 color = [
-                    0,
-                    0,
                     1,
+                    0,
+                    0,
                     
                 ],
-                strength = np.random.uniform(low=1.0,high=5.0)
+                strength = 2
             ),
             
             Light(
@@ -161,7 +166,7 @@ class Scene:
                     0,
                     
                 ],
-                strength = 5
+                strength = 0
             ),
             
             
@@ -169,12 +174,12 @@ class Scene:
         ]
 
     def update(self, rate):
-        '''
-        for cube in self.pyramids:
-            cube.eulers[1] += 0.25 * rate
-            if cube.eulers[1] > 360:
-                cube.eulers[1] -= 360
-        '''
+        
+        for pyramid in self.pyramids:
+            pyramid.eulers[2] += 0.25 * rate
+            if pyramid.eulers[2] > 360:
+                pyramid.eulers[2] -= 360
+        
         pass
         
 
@@ -323,6 +328,7 @@ class GraphicsEngine:
     def __init__(self):
 
         self.wood_texture = Material("gfx/wood.jpeg")
+        self.stone_texture = Material("gfx/stone2.jpeg")
         self.cube_mesh = Mesh("models/cube.obj")
         self.pyramid_mesh = PyramidMesh()
         self.rocket_mesh = Mesh("models/rocket.obj")
@@ -384,7 +390,7 @@ class GraphicsEngine:
         for pyramid in scene.pyramids:
 
             glUniformMatrix4fv(self.modelMatrixLocation,1,GL_FALSE,pyramid.get_pyramid_model_matrix())
-            self.wood_texture.use()
+            self.stone_texture.use()
             
             #draw triangle
             glBindVertexArray(self.pyramid_mesh.vao)
@@ -417,6 +423,8 @@ class GraphicsEngine:
 
         self.draw_objects(scene)
         
+        print("Camera at"+ str(scene.player.position))
+        print("Facing "+ str(scene.player.position + scene.player.forwards))
 
         glFlush()
         
@@ -572,35 +580,35 @@ class PyramidMesh():
         self.vertices = ( #now its x y z r g b S T, VN0, VN1, VN2
            
             
-            #front
-            -1, -1, 1, 0, 1, 
-            1, -1, 1, 1, 0,
-            0, 1, 0, 0.5, 0,
+            #front GOOD
+            -1, -1, 1, 0, 1, 0, 0.4472136, 0.89442719,
+            1, -1, 1, 1, 0, 0, 0.4472136, 0.89442719,
+            0, 1, 0, 0.5, 0, 0, 0.4472136, 0.89442719,
 
             #right side
-            1, -1, 1, 0, 1, 
-            1, -1, -1, 1, 1,
-            0, 1, 0, 0.5, 0,
+            1, -1, 1, 0, 1, 0.9486833, 0.31622777, 0,
+            1, -1, -1, 1, 1, 0.9486833, 0.31622777, 0,
+            0, 1, 0, 0.5, 0, 0.9486833, 0.31622777, 0,
             
             # LEFT SIDE
-            -1, -1, 1, 0, 1,
-            -1, -1, -1, 1, 1,
-            0, 1, 0, 0.5, 0,
+            -1, -1, 1, 0, 1, -0.9486833, 0.31622777, 0,
+            -1, -1, -1, 1, 1, -0.9486833, 0.31622777, 0,
+            0, 1, 0, 0.5, 0, -0.9486833, 0.31622777, 0,
             
             #BACK
-            -1, -1, -1, 0, 1,
-            1, -1, -1, 1, 1,
-            0, 1, 0, 0.5, 0,
+            -1, -1, -1, 0, 1, 0, 0.4472136, -0.89442719,
+            1, -1, -1, 1, 1, 0, 0.4472136, -0.89442719,
+            0, 1, 0, 0.5, 0, 0, 0.4472136, -0.89442719,
             
             # BOTTOM RIGHT
-            -1, -1, 1, 0, 1,
-            1, -1, -1, 1, 1,
-            1, -1, 1, 0.5, 0,
+            -1, -1, 1, 0, 1, 0, -1, 0,
+            1, -1, -1, 1, 1,  0, -1, 0,
+            1, -1, 1, 0.5, 0,  0, -1, 0,
             
             # BOTTOM LEFT
-            -1, -1, 1, 0, 1,
-            1, -1, -1, 1, 1,
-            -1, -1, -1, 0.5, 0,
+            -1, -1, 1, 0, 1,  0, -1, 0,
+            1, -1, -1, 1, 1,  0, -1, 0,
+            -1, -1, -1, 0.5, 0,  0, -1, 0,
             
         )
         # convert the vertices into a numpy array
@@ -608,7 +616,7 @@ class PyramidMesh():
         
         self.vertex_count = len(self.vertices) // 5
         
-        
+        #calculate the surface normals, using algebra
         self.calculate_surface_normal()
         
 
@@ -638,8 +646,8 @@ class PyramidMesh():
         sides = [
             [v1,v2,v3],
             [v2, v3, v5],
-            [v1, v3, v4],
-            [v4, v3, v5],
+            [v1, v4, v3],
+            [v4, v5, v3],
             [v1,v2,v5],
             [v1,v4,v5]
             
