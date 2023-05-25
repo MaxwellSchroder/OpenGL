@@ -47,10 +47,14 @@ def initialize_glfw():
 class Pyramid:
 
 
-    def __init__(self, position, eulers):
+    def __init__(self, position, eulers, theta = 0, phi = 0):
 
         self.position = np.array(position, dtype=np.float32)
         self.eulers = np.array(eulers, dtype=np.float32)
+        
+        self.theta = theta
+        self.phi = phi
+        self.update_vectors()
 
     def get_pyramid_model_matrix(self):
         model_transform = pyrr.matrix44.create_identity(dtype=np.float32)
@@ -67,6 +71,26 @@ class Pyramid:
             )
         )
         return model_transform
+    
+    def update_vectors(self):
+        #self.forwards = np.array([0,0,0], dtype=np.float32)
+        
+        self.forwards = np.array(
+            [
+                np.cos(np.deg2rad(self.theta)) * np.cos(np.deg2rad(self.phi)),
+                np.sin(np.deg2rad(self.theta)) * np.cos(np.deg2rad(self.phi)),
+                np.sin(np.deg2rad(self.phi))
+            ],
+            dtype = np.float32
+        )
+
+        
+        globalUp = np.array([0,0,1], dtype=np.float32)
+
+        self.right = np.cross(self.forwards, globalUp)
+
+        self.up = np.cross(self.right, self.forwards)
+    
 
 class Light:
     def __init__(self, position, color, strength):
@@ -114,13 +138,19 @@ class Scene:
         self.pyramids = [
             Pyramid(
                 position = [0,0,0],
-                eulers = [0,0,0]
+                eulers = [0,0,0],
+                theta=90,
+                phi=0
             ),
         ]
 
         self.player = Player(
             position = [0,-5,0]
         )
+        
+        #rotate to face the triangle
+        # THETA = Angle off the X axis, going left
+        # PHI angle UP off the Y axis
         self.spin_player(90,0)
         
         self.lights = [
@@ -156,38 +186,50 @@ class Scene:
             
             Light(
                 position = [
-                    np.random.uniform(low=0.0,high=9.0),
-                    np.random.uniform(low=-10.0,high=2.0),
+                    np.random.uniform(low=-5,high=5),
+                    np.random.uniform(low=-1,high=5),
                     np.random.uniform(low=-2.0,high=4.0)
                 ],
                 color = [
-                    0,
-                    1,
+                    np.random.uniform(low=0,high=1),
+                    np.random.uniform(low=0,high=1),
                     0,
                     
                 ],
-                strength = 0
+                strength = 4
             ),
-            
-            
-            
+            Light(
+                position = [
+                    np.random.uniform(low=-5,high=5),
+                    np.random.uniform(low=-1,high=5),
+                    np.random.uniform(low=-2.0,high=4.0)
+                ],
+                color = [
+                    np.random.uniform(low=0,high=1),
+                    np.random.uniform(low=0,high=1),
+                    0,
+                    
+                ],
+                strength = 4
+            ),
         ]
 
     def update(self, rate):
+        '''
         
         for pyramid in self.pyramids:
             pyramid.eulers[2] += 0.25 * rate
             if pyramid.eulers[2] > 360:
                 pyramid.eulers[2] -= 360
+        '''
         
-        pass
         
 
     def move_player(self, dPos):
 
         dPos = np.array(dPos, dtype = np.float32)
         self.player.position += dPos
-    
+
     def spin_player(self, dTheta, dPhi):
 
         self.player.theta += dTheta
@@ -200,6 +242,52 @@ class Scene:
             89, max(-89, self.player.phi + dPhi)
         )
         self.player.update_vectors()
+    
+    def move_pyramid(self, dPos):
+        dPos = np.array(dPos, dtype = np.float32)
+        self.pyramids[0].position += dPos
+
+    def spin_pyramid(self, dTheta, dPhi):
+        '''
+        to spin the pyramid, we need to update the THETA which is used for the 
+        forwards vector calculation. this makes sure when we move forward, our forwards
+        vector is actually changing
+        
+        ALSO
+        
+        we need to rotate the pyramid on its eulers to change its orientation
+        on the screen
+        
+        We also 
+        
+        '''
+        self.pyramids[0].eulers[1] += dTheta
+        if self.pyramids[0].eulers[1] > 360:
+            self.pyramids[0].eulers[1] -= 360
+        elif self.pyramids[0].eulers[1] < 0:
+            self.pyramids[0].eulers[1] += 360
+        
+        reverseTheta = -1 * dTheta
+        
+        self.pyramids[0].theta += reverseTheta
+        if self.pyramids[0].theta > 360:
+            self.pyramids[0].theta -= 360
+        elif self.pyramids[0].theta < 0:
+            self.pyramids[0].theta += 360
+        
+        self.pyramids[0].phi = min(
+            89, max(-89, self.pyramids[0].phi + dPhi)
+        )
+        self.pyramids[0].update_vectors()
+
+
+    def rolling_arrow(self, rate):
+        for pyramid in self.pyramids:
+            pyramid.eulers[2] += 0.25 * rate
+            if pyramid.eulers[2] > 360:
+                pyramid.eulers[2] -= 360
+
+    
 
 class App:
 
@@ -231,6 +319,7 @@ class App:
             
             self.handleKeys()
             self.handleMouse()
+            #print(str(self.scene.player.position))
 
             glfw.poll_events()
 
@@ -273,7 +362,25 @@ class App:
         if glfw.get_key(self.window, GLFW_CONSTANTS.GLFW_KEY_D) == GLFW_CONSTANTS.GLFW_PRESS:
             combo += 8
         
-        if combo > 0:
+        #USE SHIFT AND SPACE TO GO DOWN AND UP IN Z AXIS, RESPECTIVELy
+        #represents the change in the cameras vertical positon (z) axis
+        camera_z = 0
+        
+        if glfw.get_key(self.window, GLFW_CONSTANTS.GLFW_KEY_LEFT_SHIFT) == GLFW_CONSTANTS.GLFW_PRESS:
+            camera_z += -1
+        
+        if glfw.get_key(self.window, GLFW_CONSTANTS.GLFW_KEY_SPACE) == GLFW_CONSTANTS.GLFW_PRESS:
+            camera_z += 1
+        
+        dPos = [
+                0,
+                0,
+                camera_z * 0.025 * 0.2
+        ]
+        self.scene.move_player(dPos)
+
+        
+        if (combo > 0):
             if combo == 3:
                 directionModifier = 45
             elif combo == 2 or combo == 7:
@@ -296,7 +403,56 @@ class App:
             ]
 
             self.scene.move_player(dPos)
+        
+        # NOW HANDLE KEYS FOR ARROW
+        combo = 0
+        directionModifier = 0
+        
+        #if change theta is positive, it moves left, if it is negative, it moves right
+        changeTheta = 0
+        
+        if glfw.get_key(self.window, GLFW_CONSTANTS.GLFW_KEY_UP) == GLFW_CONSTANTS.GLFW_PRESS:
+            combo += 1
+        if glfw.get_key(self.window, GLFW_CONSTANTS.GLFW_KEY_LEFT) == GLFW_CONSTANTS.GLFW_PRESS:
+            combo += 2
+            changeTheta = 1
+        if glfw.get_key(self.window, GLFW_CONSTANTS.GLFW_KEY_RIGHT) == GLFW_CONSTANTS.GLFW_PRESS:
+            combo += 4
+            changeTheta = -1
+        
+        
+        if combo > 0:
+            #we need to check if W is pressed, so we actually move forward
+            # so check if you are just pressing left and right
+            if (combo != 2 and combo != 4 and combo != 6):
+                # Now move the pyramid forward
+                dPos = [
+                    self.frameTime * 0.025 * np.cos(np.deg2rad(self.scene.pyramids[0].theta + directionModifier)),
+                    self.frameTime * 0.025 * np.sin(np.deg2rad(self.scene.pyramids[0].theta + directionModifier)),
+                    0
+                ]
+                #print(str(dPos))
 
+                self.scene.move_pyramid(dPos)
+                
+                #ROTATE PYRAMID AROUND Y axis, as if arrow is spinning through the air
+                #spin the arrow function
+                rate = 20 * self.frameTime / 16.67
+                self.scene.rolling_arrow(rate=rate)
+            
+            #HANDLES ROTATION
+            #if you press left and right, don't rotate
+            if (combo != 6):
+                #Add rotation
+                rate = 5 * self.frameTime / 16.67
+                theta_reversal = -1
+                theta_increment = theta_reversal * rate * changeTheta
+                #no change in the pitch yet
+                phi_increment = 0
+                
+                self.scene.spin_pyramid(theta_increment, phi_increment)
+            
+        
     def handleMouse(self):
 
         (x,y) = glfw.get_cursor_pos(self.window)
@@ -423,8 +579,8 @@ class GraphicsEngine:
 
         self.draw_objects(scene)
         
-        print("Camera at"+ str(scene.player.position))
-        print("Facing "+ str(scene.player.position + scene.player.forwards))
+        #print("Camera at"+ str(scene.player.position))
+        #print("Facing "+ str(scene.player.position + scene.player.forwards))
 
         glFlush()
         

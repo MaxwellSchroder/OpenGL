@@ -1,2 +1,1 @@
- strength = 2
-            )
+t
