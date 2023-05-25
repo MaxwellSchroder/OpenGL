@@ -180,6 +180,8 @@ class Pyramid:
 
         self.up = np.cross(self.right, self.forwards)
     
+    def update(self, rate):
+        self.update_vectors()
 
 class Light:
     def __init__(self, position, color, strength):
@@ -219,12 +221,15 @@ class Player:
 
         self.up = np.cross(self.right, self.forwards)
 
+    def update(self):
+        self.update_vectors()
+
 class Scene:
 
-
     def __init__(self):
-
-        self.pyramids = [
+        
+        self.renderables: dict[int,list[Pyramid]] = {}
+        self.renderables[OBJECT_PYRAMID] = [
             Pyramid(
                 position = [0,0,0],
                 eulers = [0,0,0],
@@ -233,14 +238,15 @@ class Scene:
             ),
         ]
 
-        self.player = Player(
+
+        self.camera = Player(
             position = [0,-5,0]
         )
         
         #rotate to face the triangle
         # THETA = Angle off the X axis, going left
         # PHI angle UP off the Y axis
-        self.spin_player(90,0)
+        self.spin_camera(90,0)
         
         self.lights = [
             Light(
@@ -311,30 +317,35 @@ class Scene:
             if pyramid.eulers[2] > 360:
                 pyramid.eulers[2] -= 360
         '''
+        for _,objectList in self.renderables.items():
+            for object in objectList:
+                object.update(rate)
+        
+        self.camera.update()
         
         
 
-    def move_player(self, dPos):
+    def move_camera(self, dPos):
 
         dPos = np.array(dPos, dtype = np.float32)
-        self.player.position += dPos
+        self.camera.position += dPos
 
-    def spin_player(self, dTheta, dPhi):
+    def spin_camera(self, dTheta, dPhi):
 
-        self.player.theta += dTheta
-        if self.player.theta > 360:
-            self.player.theta -= 360
-        elif self.player.theta < 0:
-            self.player.theta += 360
+        self.camera.theta += dTheta
+        if self.camera.theta > 360:
+            self.camera.theta -= 360
+        elif self.camera.theta < 0:
+            self.camera.theta += 360
         
-        self.player.phi = min(
-            89, max(-89, self.player.phi + dPhi)
+        self.camera.phi = min(
+            89, max(-89, self.camera.phi + dPhi)
         )
-        self.player.update_vectors()
+        self.camera.update_vectors()
     
     def move_pyramid(self, dPos):
         dPos = np.array(dPos, dtype = np.float32)
-        self.pyramids[0].position += dPos
+        self.renderables[OBJECT_PYRAMID][0].position += dPos
 
     def spin_pyramid(self, dTheta, dPhi):
         '''
@@ -350,33 +361,32 @@ class Scene:
         We also 
         
         '''
-        self.pyramids[0].eulers[1] += dTheta
-        if self.pyramids[0].eulers[1] > 360:
-            self.pyramids[0].eulers[1] -= 360
-        elif self.pyramids[0].eulers[1] < 0:
-            self.pyramids[0].eulers[1] += 360
+        self.renderables[OBJECT_PYRAMID][0].eulers[1] += dTheta
+        if self.renderables[OBJECT_PYRAMID][0].eulers[1] > 360:
+            self.renderables[OBJECT_PYRAMID][0].eulers[1] -= 360
+        elif self.renderables[OBJECT_PYRAMID][0].eulers[1] < 0:
+            self.renderables[OBJECT_PYRAMID][0].eulers[1] += 360
         
         reverseTheta = -1 * dTheta
         
-        self.pyramids[0].theta += reverseTheta
-        if self.pyramids[0].theta > 360:
-            self.pyramids[0].theta -= 360
-        elif self.pyramids[0].theta < 0:
-            self.pyramids[0].theta += 360
+        self.renderables[OBJECT_PYRAMID][0].theta += reverseTheta
+        if self.renderables[OBJECT_PYRAMID][0].theta > 360:
+            self.renderables[OBJECT_PYRAMID][0].theta -= 360
+        elif self.renderables[OBJECT_PYRAMID][0].theta < 0:
+            self.renderables[OBJECT_PYRAMID][0].theta += 360
         
-        self.pyramids[0].phi = min(
-            89, max(-89, self.pyramids[0].phi + dPhi)
+        self.renderables[OBJECT_PYRAMID][0].phi = min(
+            89, max(-89, self.renderables[OBJECT_PYRAMID][0].phi + dPhi)
         )
-        self.pyramids[0].update_vectors()
+        self.renderables[OBJECT_PYRAMID][0].update_vectors()
 
 
     def rolling_arrow(self, rate):
-        for pyramid in self.pyramids:
+        for pyramid in self.renderables[OBJECT_PYRAMID]:
             pyramid.eulers[2] += 0.25 * rate
             if pyramid.eulers[2] > 360:
                 pyramid.eulers[2] -= 360
 
-    
 
 class App:
 
@@ -431,7 +441,6 @@ class App:
             
             self.handleKeys()
             self.handleMouse()
-            #print(str(self.scene.player.position))
 
             glfw.poll_events()
 
@@ -489,7 +498,7 @@ class App:
                 0,
                 camera_z * 0.025 * 0.2
         ]
-        self.scene.move_player(dPos)
+        self.scene.move_camera(dPos)
 
         
         if (combo > 0):
@@ -509,12 +518,12 @@ class App:
                 directionModifier = 315
             
             dPos = [
-                self.frameTime * 0.025 * np.cos(np.deg2rad(self.scene.player.theta + directionModifier)),
-                self.frameTime * 0.025 * np.sin(np.deg2rad(self.scene.player.theta + directionModifier)),
+                self.frameTime * 0.025 * np.cos(np.deg2rad(self.scene.camera.theta + directionModifier)),
+                self.frameTime * 0.025 * np.sin(np.deg2rad(self.scene.camera.theta + directionModifier)),
                 0
             ]
 
-            self.scene.move_player(dPos)
+            self.scene.move_camera(dPos)
         
         # NOW HANDLE KEYS FOR ARROW
         combo = 0
@@ -539,8 +548,8 @@ class App:
             if (combo != 2 and combo != 4 and combo != 6):
                 # Now move the pyramid forward
                 dPos = [
-                    self.frameTime * 0.025 * np.cos(np.deg2rad(self.scene.pyramids[0].theta + directionModifier)),
-                    self.frameTime * 0.025 * np.sin(np.deg2rad(self.scene.pyramids[0].theta + directionModifier)),
+                    self.frameTime * 0.025 * np.cos(np.deg2rad(self.scene.renderables[OBJECT_PYRAMID][0].theta + directionModifier)),
+                    self.frameTime * 0.025 * np.sin(np.deg2rad(self.scene.renderables[OBJECT_PYRAMID][0].theta + directionModifier)),
                     0
                 ]
                 #print(str(dPos))
@@ -571,7 +580,7 @@ class App:
         rate = self.frameTime / 16.67
         theta_increment = rate * ((SCREEN_WIDTH / 2) - x)
         phi_increment = rate * ((SCREEN_HEIGHT / 2) - y)
-        self.scene.spin_player(theta_increment, phi_increment)
+        self.scene.spin_camera(theta_increment, phi_increment)
         glfw.set_cursor_pos(self.window, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2)
 
     def calculateFramerate(self):
@@ -726,7 +735,7 @@ class GraphicsEngine:
         return shader
 
     def draw_objects(self, scene):
-        for pyramid in scene.pyramids:
+        for pyramid in scene.renderables[OBJECT_PYRAMID]:
 
             glUniformMatrix4fv(self.modelMatrixLocation,1,GL_FALSE,pyramid.get_pyramid_model_matrix())
             self.materials[OBJECT_PYRAMID].use()
@@ -745,17 +754,15 @@ class GraphicsEngine:
         # PUSHING VECTORS OF CAMERA INTO SHADER
         glUseProgram(self.shaders[PIPELINE_SKY])
         glDisable(GL_DEPTH_TEST)
-        glUniform3fv(self.forwardsLocation, 1, scene.player.forwards)
-        glUniform3fv(self.rightLocation, 1, scene.player.right)
+        self.materials[OBJECT_SKY].use()
+        glUniform3fv(self.forwardsLocation, 1, scene.camera.forwards)
+        glUniform3fv(self.rightLocation, 1, scene.camera.right)
         correction_factor = self.screenHeight / self.screenWidth
-        glUniform3fv(self.upLocation, 1, correction_factor * scene.player.up)
+        glUniform3fv(self.upLocation, 1, correction_factor * scene.camera.up)
         
         #take points of sky, and the material (Its texture) and push the array buffer to the vertexes
-        mesh = self.meshes[OBJECT_SKY]
-        material = self.materials[OBJECT_SKY]
-        material.use()
-        glBindVertexArray(mesh.vao)
-        glDrawArrays(GL_TRIANGLES, 0, mesh.vertex_count)
+        glBindVertexArray(self.meshes[OBJECT_SKY].vao)
+        glDrawArrays(GL_TRIANGLES, 0, self.meshes[OBJECT_SKY].vertex_count)
         
         #RE ENABLE DEPTH TEST
         glEnable(GL_DEPTH_TEST)
@@ -764,9 +771,9 @@ class GraphicsEngine:
         
 
         view_transform = pyrr.matrix44.create_look_at(
-            eye = scene.player.position,
-            target = scene.player.position + scene.player.forwards,
-            up = scene.player.up, dtype = np.float32
+            eye = scene.camera.position,
+            target = scene.camera.position + scene.camera.forwards,
+            up = scene.camera.up, dtype = np.float32
         )
         glUniformMatrix4fv(self.viewMatrixLocation, 1, GL_FALSE, view_transform)
         
@@ -776,13 +783,11 @@ class GraphicsEngine:
             glUniform3fv(self.lightLocation["position"][i], 1, light.position)
             glUniform3fv(self.lightLocation["color"][i], 1, light.color)
             glUniform1f(self.lightLocation["strength"][i], light.strength)
-        glUniform3fv(self.cameraPosLocation, 1, scene.player.position)
+        glUniform3fv(self.cameraPosLocation, 1, scene.camera.position)
             
 
         self.draw_objects(scene)
         
-        #print("Camera at"+ str(scene.player.position))
-        #print("Facing "+ str(scene.player.position + scene.player.forwards))
 
         glFlush()
         
