@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import Any
 import glfw
 import glfw.GLFW as GLFW_CONSTANTS
@@ -15,32 +16,120 @@ from sklearn.preprocessing import normalize
 SCREEN_WIDTH = 640
 SCREEN_HEIGHT = 480
 
+OBJECT_PYRAMID = 0
+OBJECT_PLAYER = 1
+OBJECT_SKY = 2
+
+
 RETURN_ACTION_CONTINUE = 0
 RETURN_ACTION_EXIT = 1
+
+PIPELINE_SKY = 0
+PIPELINE_3D = 1
 
 #0: debug, 1: production
 GAME_MODE = 0
 
 ############################## helper functions ###############################
 
-def initialize_glfw():
+def load_model_from_file(
+    filename: str) -> list[float]:
+    """ 
+        Read the given obj file and return a list of all the
+        vertex data.
+    """
 
-    glfw.init()
-    glfw.window_hint(GLFW_CONSTANTS.GLFW_CONTEXT_VERSION_MAJOR,3)
-    glfw.window_hint(GLFW_CONSTANTS.GLFW_CONTEXT_VERSION_MINOR,3)
-    glfw.window_hint(GLFW_CONSTANTS.GLFW_OPENGL_PROFILE, GLFW_CONSTANTS.GLFW_OPENGL_CORE_PROFILE)
-    glfw.window_hint(GLFW_CONSTANTS.GLFW_OPENGL_FORWARD_COMPAT, GLFW_CONSTANTS.GLFW_TRUE)
-    #for uncapped framerate
-    glfw.window_hint(GLFW_CONSTANTS.GLFW_DOUBLEBUFFER,GL_FALSE) 
-    window = glfw.create_window(SCREEN_WIDTH, SCREEN_HEIGHT, "Title", None, None)
-    glfw.make_context_current(window)
-    
-    #glViewport(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)
-    
-    glEnable(GL_PROGRAM_POINT_SIZE)
-    glClearColor(0.1, 0.1, 0.1, 1)
+    v = []
+    vt = []
+    vn = []
+    vertices = []
 
-    return window
+    with open(filename,'r') as f:
+        line = f.readline()
+        while line:
+            words = line.split(" ")
+            if words[0] == "v":
+                v.append(read_vertex_data(words))
+            elif words[0] == "vt":
+                vt.append(read_texcoord_data(words))
+            elif words[0] == "vn":
+                vn.append(read_normal_data(words))
+            elif words[0] == "f":
+                read_face_data(words, v, vt, vn, vertices)
+            line = f.readline()
+    
+    return vertices
+
+def read_vertex_data(words: list[str]) -> list[float]:
+    """ 
+        read the given position description and
+        return the vertex it represents.
+    """
+
+    return [
+        float(words[1]),
+        float(words[2]),
+        float(words[3])
+    ]
+
+def read_texcoord_data(words: list[str]) -> list[float]:
+    """ 
+        read the given texcoord description and
+        return the texcoord it represents.
+    """
+
+    return [
+        float(words[1]),
+        float(words[2])
+    ]
+
+def read_normal_data(words: list[str]) -> list[float]:
+    """ 
+        read the given normal description and
+        return the normal it represents.
+    """
+
+    return [
+        float(words[1]),
+        float(words[2]),
+        float(words[3])
+    ]
+
+def read_face_data(
+    words: list[str], 
+    v: list[float], vt: list[float], vn: list[float], 
+    vertices: list[float]) -> None:
+    """
+        Read the given face description, and use the
+        data from the pre-filled v, vt, vn arrays to add
+        data to the vertices array
+    """
+    
+    triangles_in_face = len(words) - 3
+
+    for i in range(triangles_in_face):
+        read_corner(words[1], v, vt, vn, vertices)
+        read_corner(words[i + 2], v, vt, vn, vertices)
+        read_corner(words[i + 3], v, vt, vn, vertices)
+
+def read_corner(
+    description: str, 
+    v: list[float], vt: list[float], vn: list[float], 
+    vertices: list[float]) -> None:
+    """
+        Read the given corner description, then send the
+        approprate v, vt, vn data to the vertices array.
+    """
+
+    v_vt_vn = description.split("/")
+
+    for x in v[int(v_vt_vn[0]) - 1]:
+        vertices.append(x)
+    for x in vt[int(v_vt_vn[1]) - 1]:
+        vertices.append(x)
+    for x in vn[int(v_vt_vn[2]) - 1]:
+        vertices.append(x)
+
 
 ###############################################################################
 
@@ -292,15 +381,18 @@ class Scene:
 class App:
 
 
-    def __init__(self, window):
+    def __init__(self, screenWidth, screenHeight):
 
-        self.window = window
+        #self.window = window
+        
+        self.screenWidth = screenWidth
+        self.screenHeight = screenHeight
+        
+        self.set_up_glfw()
 
-        self.renderer = GraphicsEngine()
+        self.renderer = GraphicsEngine(self.screenWidth, self.screenHeight, self.window)
 
         self.scene = Scene()
-        
-        
 
         self.lastTime = glfw.get_time()
         self.currentTime = 0
@@ -308,7 +400,27 @@ class App:
         self.frameTime = 0
 
         self.mainLoop()
+        
+    def set_up_glfw(self) -> None:
+        """ Set up the glfw environment """
 
+        glfw.init()
+        glfw.window_hint(GLFW_CONSTANTS.GLFW_CONTEXT_VERSION_MAJOR,3)
+        glfw.window_hint(GLFW_CONSTANTS.GLFW_CONTEXT_VERSION_MINOR,3)
+        glfw.window_hint(
+            GLFW_CONSTANTS.GLFW_OPENGL_PROFILE, 
+            GLFW_CONSTANTS.GLFW_OPENGL_CORE_PROFILE
+        )
+        glfw.window_hint(
+            GLFW_CONSTANTS.GLFW_OPENGL_FORWARD_COMPAT, 
+            GLFW_CONSTANTS.GLFW_TRUE
+        )
+        glfw.window_hint(GLFW_CONSTANTS.GLFW_DOUBLEBUFFER, False)
+        self.window = glfw.create_window(
+            self.screenWidth, self.screenHeight, "Title", None, None
+        )
+        glfw.make_context_current(self.window)
+    
     def mainLoop(self):
         running = True
         while (running):
@@ -481,54 +593,125 @@ class App:
 class GraphicsEngine:
 
 
-    def __init__(self):
-
-        self.wood_texture = Material("gfx/wood.jpeg")
-        self.stone_texture = Material("gfx/stone2.jpeg")
-        self.cube_mesh = Mesh("models/cube.obj")
-        self.pyramid_mesh = PyramidMesh()
-        self.rocket_mesh = Mesh("models/rocket.obj")
-        self.girl_mesh = Mesh("models/girl.obj")
+    def __init__(self, screenWidth: int, screenHeight: int,
+        window):
+        
+        self.screenWidth = screenWidth
+        self.screenHeight = screenHeight
+        
+        self.set_up_opengl(window=window)
+        self.make_assets()
 
         #initialise opengl
         glClearColor(0.0, 0.0, 0.0, 1)
-        self.shader = self.createShader("shaders/vertex.txt", "shaders/fragment.txt")
-        glUseProgram(self.shader)
-        glUniform1i(glGetUniformLocation(self.shader, "imageTexture"), 0)
+        
+        
+        self.get_uniform_locations()
+        
+        self.set_onetime_uniforms()
+        
+    def set_up_opengl(self, window) -> None:
+        """
+            Set up any general options used in OpenGL rendering.
+        """
+
+        glClearColor(0.0, 0.0, 0.0, 1)
+
+        (w,h) = glfw.get_framebuffer_size(window)
+        glViewport(0,0,w, h)
+
         glEnable(GL_DEPTH_TEST)
+        glDepthFunc(GL_LESS)
+
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+    
+    def make_assets(self):
+        '''We create our 
+        meshes
+        materials (textures)
+        shaders
+        
+        '''
+        self.meshes: dict[int, Mesh] = {
+            OBJECT_PYRAMID: PyramidMesh(),
+            OBJECT_SKY: Quad2D(
+                center = (0,0),
+                size = (1,1)
+            )
+        }
+        
+        self.materials: dict[int, Material] = {
+            OBJECT_PYRAMID: Material2D("gfx/stone2.jpeg"),
+            OBJECT_SKY: MaterialCubemap("gfx/sky")
+        }
+        
+        self.shaders: dict[int, int] = {
+            PIPELINE_SKY: self.createShader(
+                "shaders/vertex_sky.txt", 
+                "shaders/fragment_sky.txt"
+            ),
+            PIPELINE_3D: self.createShader(
+                "shaders/vertex.txt", 
+                "shaders/fragment.txt"
+            )
+        }
+        
+        # store struct of light as a position
+        self.lightLocation = {
+            "position": [
+                glGetUniformLocation(self.shaders[PIPELINE_3D], f"Lights[{i}].position")
+                for i in range(8)
+            ],
+            "color": [
+                glGetUniformLocation(self.shaders[PIPELINE_3D], f"Lights[{i}].color")
+                for i in range(8)
+            ],
+            "strength": [
+                glGetUniformLocation(self.shaders[PIPELINE_3D], f"Lights[{i}].strength")
+                for i in range(8)
+            ],
+        }
+
+    def get_uniform_locations(self):
+        # get the required uniforms for the sky pipeline
+        glUseProgram(self.shaders[PIPELINE_SKY])
+        self.forwardsLocation = glGetUniformLocation(
+            self.shaders[PIPELINE_SKY], "forwards"
+        )
+        self.rightLocation = glGetUniformLocation(
+            self.shaders[PIPELINE_SKY], "right"
+        )
+        self.upLocation = glGetUniformLocation(
+            self.shaders[PIPELINE_SKY], "up"
+        )
+        
+        glUseProgram(self.shaders[PIPELINE_3D])
+        
+        self.modelMatrixLocation = glGetUniformLocation(self.shaders[PIPELINE_3D], "model")
+        self.viewMatrixLocation = glGetUniformLocation(self.shaders[PIPELINE_3D], "view")
+        
+        #get camera position location for specular component
+        self.cameraPosLocation = glGetUniformLocation(self.shaders[PIPELINE_3D], "cameraPosition")
+        
+        self.projectionMatrixLocation = glGetUniformLocation(self.shaders[PIPELINE_3D],"projection")
+
+    def set_onetime_uniforms(self):
+        # SET BACKGROUND UNIFORMS
+        glUseProgram(self.shaders[PIPELINE_3D])
+                
+        #set projection uniform
 
         projection_transform = pyrr.matrix44.create_perspective_projection(
             fovy = 45, aspect = 640/480, 
             near = 0.1, far = 50, dtype=np.float32
         )
         glUniformMatrix4fv(
-            glGetUniformLocation(self.shader,"projection"),
+            self.projectionMatrixLocation,
             1, GL_FALSE, projection_transform
         )
-        self.modelMatrixLocation = glGetUniformLocation(self.shader, "model")
-        self.viewMatrixLocation = glGetUniformLocation(self.shader, "view")
-        # store struct of light as a position
-        self.lightLocation = {
-            "position": [
-                glGetUniformLocation(self.shader, f"Lights[{i}].position")
-                for i in range(8)
-            ],
-            "color": [
-                glGetUniformLocation(self.shader, f"Lights[{i}].color")
-                for i in range(8)
-            ],
-            "strength": [
-                glGetUniformLocation(self.shader, f"Lights[{i}].strength")
-                for i in range(8)
-            ],
-        }
-            
-        
-        #get camera position location for specular component
-        self.cameraPosLocation = glGetUniformLocation(self.shader, "cameraPosition")
-        
-        
-    
+        glUniform1i(glGetUniformLocation(self.shaders[PIPELINE_SKY], "imageTexture"), 0)
+
     def createShader(self, vertexFilepath, fragmentFilepath):
 
         with open(vertexFilepath,'r') as f:
@@ -546,11 +729,11 @@ class GraphicsEngine:
         for pyramid in scene.pyramids:
 
             glUniformMatrix4fv(self.modelMatrixLocation,1,GL_FALSE,pyramid.get_pyramid_model_matrix())
-            self.stone_texture.use()
+            self.materials[OBJECT_PYRAMID].use()
             
             #draw triangle
-            glBindVertexArray(self.pyramid_mesh.vao)
-            glDrawArrays(GL_TRIANGLES, 0, self.pyramid_mesh.vertex_count)
+            glBindVertexArray(self.meshes[OBJECT_PYRAMID].vao)
+            glDrawArrays(GL_TRIANGLES, 0, self.meshes[OBJECT_PYRAMID].vertex_count)
 
             glFlush()
 
@@ -558,7 +741,26 @@ class GraphicsEngine:
 
         #refresh screen
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        glUseProgram(self.shader)
+        #push sky onto the screen
+        # PUSHING VECTORS OF CAMERA INTO SHADER
+        glUseProgram(self.shaders[PIPELINE_SKY])
+        glDisable(GL_DEPTH_TEST)
+        glUniform3fv(self.forwardsLocation, 1, scene.player.forwards)
+        glUniform3fv(self.rightLocation, 1, scene.player.right)
+        correction_factor = self.screenHeight / self.screenWidth
+        glUniform3fv(self.upLocation, 1, correction_factor * scene.player.up)
+        
+        #take points of sky, and the material (Its texture) and push the array buffer to the vertexes
+        mesh = self.meshes[OBJECT_SKY]
+        material = self.materials[OBJECT_SKY]
+        material.use()
+        glBindVertexArray(mesh.vao)
+        glDrawArrays(GL_TRIANGLES, 0, mesh.vertex_count)
+        
+        #RE ENABLE DEPTH TEST
+        glEnable(GL_DEPTH_TEST)
+        
+        glUseProgram(self.shaders[PIPELINE_3D])
         
 
         view_transform = pyrr.matrix44.create_look_at(
@@ -586,112 +788,7 @@ class GraphicsEngine:
         
     def destroy(self):
 
-        self.cube_mesh.destroy()
-        self.wood_texture.destroy()
-        glDeleteProgram(self.shader)
-
-class Mesh:
-
-
-    def __init__(self, filename):
-        # x, y, z, s, t, nx, ny, nz
-        self.vertices = self.loadMesh(filename)
-        self.vertex_count = len(self.vertices)//8
-        self.vertices = np.array(self.vertices, dtype=np.float32)
-
-        self.vao = glGenVertexArrays(1)
-        glBindVertexArray(self.vao)
-        self.vbo = glGenBuffers(1)
-        glBindBuffer(GL_ARRAY_BUFFER, self.vbo)
-        glBufferData(GL_ARRAY_BUFFER, self.vertices.nbytes, self.vertices, GL_STATIC_DRAW)
-        #position
-        glEnableVertexAttribArray(0)
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 32, ctypes.c_void_p(0))
-        #texture
-        glEnableVertexAttribArray(1)
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 32, ctypes.c_void_p(12))
-        #enable normals
-        glEnableVertexAttribArray(2)
-        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 32, ctypes.c_void_p(20))
-    
-    def loadMesh(self, filename):
-
-        #raw, unassembled data
-        v = []
-        vt = []
-        vn = []
-        
-        #final, assembled and packed result
-        vertices = []
-
-        #open the obj file and read the data
-        with open(filename,'r') as f:
-            line = f.readline()
-            while line:
-                firstSpace = line.find(" ")
-                flag = line[0:firstSpace]
-                if flag=="v":
-                    #vertex
-                    line = line.replace("v ","")
-                    line = line.split(" ")
-                    l = [float(x) for x in line]
-                    v.append(l)
-                elif flag=="vt":
-                    #texture coordinate
-                    line = line.replace("vt ","")
-                    line = line.split(" ")
-                    l = [float(x) for x in line]
-                    vt.append(l)
-                elif flag=="vn":
-                    #normal
-                    line = line.replace("vn ","")
-                    line = line.split(" ")
-                    l = [float(x) for x in line]
-                    vn.append(l)
-                elif flag=="f":
-                    #face, three or more vertices in v/vt/vn form
-                    line = line.replace("f ","")
-                    line = line.replace("\n","")
-                    #get the individual vertices for each line
-                    line = line.split(" ")
-                    faceVertices = []
-                    faceTextures = []
-                    faceNormals = []
-                    for vertex in line:
-                        #break out into [v,vt,vn],
-                        #correct for 0 based indexing.
-                        l = vertex.split("/")
-                        position = int(l[0]) - 1
-                        faceVertices.append(v[position])
-                        texture = int(l[1]) - 1
-                        faceTextures.append(vt[texture])
-                        normal = int(l[2]) - 1
-                        faceNormals.append(vn[normal])
-                    # obj file uses triangle fan format for each face individually.
-                    # unpack each face
-                    triangles_in_face = len(line) - 2
-
-                    vertex_order = []
-                    """
-                        eg. 0,1,2,3 unpacks to vertices: [0,1,2,0,2,3]
-                    """
-                    for i in range(triangles_in_face):
-                        vertex_order.append(0)
-                        vertex_order.append(i+1)
-                        vertex_order.append(i+2)
-                    for i in vertex_order:
-                        for x in faceVertices[i]:
-                            vertices.append(x)
-                        for x in faceTextures[i]:
-                            vertices.append(x)
-                        for x in faceNormals[i]:
-                            vertices.append(x)
-                line = f.readline()
-        return vertices
-    
-    def destroy(self):
-        glDeleteVertexArrays(1, (self.vao,))
-        glDeleteBuffers(1,(self.vbo,))
+        glDeleteProgram(self.shaders[PIPELINE_3D])
 
 class PyramidMesh():
     def __init__(self):
@@ -871,27 +968,162 @@ class PyramidMesh():
 
 class Material:
 
+    def __init__(self, textureType: int):
+        self.texture = glGenTextures(1)
+        self.textureType = textureType
+        glBindTexture(textureType, self.texture)
+    
+    def use(self):
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(self.textureType, self.texture)
+    
+    def destroy(self):
+        glDeleteTextures(1, (self.texture,))
+
+class Material2D(Material):
+
     
     def __init__(self, filepath):
-        self.texture = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_2D, self.texture)
+        
+        super().__init__(GL_TEXTURE_2D)
+        
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-        with Image.open(filepath, mode = "r") as img:
-            image_width,image_height = img.size
-            img = img.convert("RGBA")
-            img_data = bytes(img.tobytes())
+        with Image.open(filepath, mode = "r") as image:
+            image_width,image_height = image.size
+            image = image.convert("RGBA")
+            img_data = bytes(image.tobytes())
             glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,image_width,image_height,0,GL_RGBA,GL_UNSIGNED_BYTE,img_data)
         glGenerateMipmap(GL_TEXTURE_2D)
 
-    def use(self):
-        glActiveTexture(GL_TEXTURE0)
-        glBindTexture(GL_TEXTURE_2D,self.texture)
+class MaterialCubemap(Material):
 
+
+    def __init__(self, filepath):
+
+        super().__init__(GL_TEXTURE_CUBE_MAP)
+        # 3d has S, T and R
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+
+        # ALL TEXTURES ARE SENT TTO THEIR APPROPRIATE TARGET e..g POS X, NEG Y, POS Z etc
+        #load textures
+        with Image.open(f"{filepath}_left.png", mode = "r") as img:
+            image_width,image_height = img.size
+            img = img.convert('RGBA')
+            img_data = bytes(img.tobytes())
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y,0,GL_RGBA8,image_width,image_height,0,GL_RGBA,GL_UNSIGNED_BYTE,img_data)
+        
+        with Image.open(f"{filepath}_right.png", mode = "r") as img:
+            image_width,image_height = img.size
+            img = ImageOps.flip(img)
+            img = ImageOps.mirror(img)
+            img = img.convert('RGBA')
+            img_data = bytes(img.tobytes())
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Y,0,GL_RGBA8,image_width,image_height,0,GL_RGBA,GL_UNSIGNED_BYTE,img_data)
+        
+        with Image.open(f"{filepath}_top.png", mode = "r") as img:
+            image_width,image_height = img.size
+            img = img.rotate(90)
+            img = img.convert('RGBA')
+            img_data = bytes(img.tobytes())
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Z,0,GL_RGBA8,image_width,image_height,0,GL_RGBA,GL_UNSIGNED_BYTE,img_data)
+
+        with Image.open(f"{filepath}_bottom.png", mode = "r") as img:
+            image_width,image_height = img.size
+            img = img.convert('RGBA')
+            img_data = bytes(img.tobytes())
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z,0,GL_RGBA8,image_width,image_height,0,GL_RGBA,GL_UNSIGNED_BYTE,img_data)
+        
+        with Image.open(f"{filepath}_back.png", mode = "r") as img:
+            image_width,image_height = img.size
+            img = img.rotate(-90)
+            img = img.convert('RGBA')
+            img_data = bytes(img.tobytes())
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_X,0,GL_RGBA8,image_width,image_height,0,GL_RGBA,GL_UNSIGNED_BYTE,img_data)
+
+        with Image.open(f"{filepath}_front.png", mode = "r") as img:
+            image_width,image_height = img.size
+            img = img.rotate(90)
+            img = img.convert('RGBA')
+            img_data = bytes(img.tobytes())
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X,0,GL_RGBA8,image_width,image_height,0,GL_RGBA,GL_UNSIGNED_BYTE,img_data)
+
+
+class Mesh:
+    """ A general mesh """
+
+
+    def __init__(self):
+
+        self.vertex_count = 0
+
+        self.vao = glGenVertexArrays(1)
+        self.vbo = glGenBuffers(1)
+    
     def destroy(self):
-        glDeleteTextures(1, (self.texture,))
+        
+        glDeleteVertexArrays(1, (self.vao,))
+        glDeleteBuffers(1,(self.vbo,))
 
-window = initialize_glfw()
-myApp = App(window)
+class Quad2D(Mesh):
+
+
+    def __init__(self, center: tuple[float], size: tuple[float]):
+
+        super().__init__()
+
+        # x, y
+        x,y = center
+        w,h = size
+        vertices = (
+            x + w, y - h,
+            x - w, y - h,
+            x - w, y + h,
+            
+            x - w, y + h,
+            x + w, y + h,
+            x + w, y - h,
+        )
+        self.vertex_count = 6
+        vertices = np.array(vertices, dtype=np.float32)
+
+        glBindVertexArray(self.vao)
+        glBindBuffer(GL_ARRAY_BUFFER, self.vbo)
+        glBufferData(GL_ARRAY_BUFFER, vertices.nbytes, vertices, GL_STATIC_DRAW)
+        #position
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 8, ctypes.c_void_p(0))
+
+class ObjMesh(Mesh):
+
+
+    def __init__(self, filename):
+
+        super().__init__()
+
+        # x, y, z, s, t, nx, ny, nz
+        vertices = load_model_from_file(filename)
+        self.vertex_count = len(vertices)//8
+        vertices = np.array(vertices, dtype=np.float32)
+
+        glBindVertexArray(self.vao)
+        glBindBuffer(GL_ARRAY_BUFFER, self.vbo)
+        glBufferData(GL_ARRAY_BUFFER, vertices.nbytes, vertices, GL_STATIC_DRAW)
+        #position
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 32, ctypes.c_void_p(0))
+        #texture
+        glEnableVertexAttribArray(1)
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 32, ctypes.c_void_p(12))
+        #normal
+        glEnableVertexAttribArray(2)
+        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 32, ctypes.c_void_p(20))
+
+
+myApp = App(800,600)
