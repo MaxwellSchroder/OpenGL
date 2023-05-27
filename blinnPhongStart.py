@@ -768,7 +768,7 @@ class GraphicsEngine:
         self.cameraUpLocation = glGetUniformLocation(
             self.shaders[PIPELINE_SKY], "up"
         )
-        
+                
         glUseProgram(self.shaders[PIPELINE_3D])
         
         self.modelMatrixLocation = glGetUniformLocation(self.shaders[PIPELINE_3D], "model")
@@ -793,8 +793,12 @@ class GraphicsEngine:
             self.projectionMatrixLocation,
             1, GL_FALSE, projection_transform
         )
+        # pass in image texture of sky to
         glUniform1i(glGetUniformLocation(self.shaders[PIPELINE_SKY], "imageTexture"), 0)
-
+        
+        glUniform1i(
+            glGetUniformLocation(self.shaders[PIPELINE_3D], "skyTexture"), 0)
+        
     def createShader(self, vertexFilepath, fragmentFilepath):
 
         with open(vertexFilepath,'r') as f:
