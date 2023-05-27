@@ -17,7 +17,7 @@ SCREEN_WIDTH = 640
 SCREEN_HEIGHT = 480
 
 OBJECT_PYRAMID = 0
-OBJECT_PLAYER = 1
+OBJECT_CAMERA = 1
 OBJECT_SKY = 2
 
 
@@ -130,38 +130,71 @@ def read_corner(
     for x in vn[int(v_vt_vn[2]) - 1]:
         vertices.append(x)
 
-
 ###############################################################################
 
-class Pyramid:
+class Entity:
+    """ Represents a general object with a position and rotation applied"""
 
 
-    def __init__(self, position, eulers, theta = 0, phi = 0):
+    def __init__(
+        self, position: list[float], 
+        eulers: list[float], objectType: int):
+        """
+            Initialize the entity, store its state and update its transform.
+
+            Parameters:
+
+                position: The position of the entity in the world (x,y,z)
+
+                eulers: Angles (in degrees) representing rotations around the x,y,z axes.
+
+                objectType: The type of object which the entity represents,
+                            this should match a named constant.
+
+        """
 
         self.position = np.array(position, dtype=np.float32)
         self.eulers = np.array(eulers, dtype=np.float32)
+        self.objectType = objectType
+    
+    def get_model_transform(self) -> np.ndarray:
+        """
+            Calculates and returns the entity's transform matrix,
+            based on its position and rotation.
+        """
+
+        model_transform = pyrr.matrix44.create_identity(dtype=np.float32)
+        model_transform = pyrr.matrix44.multiply(
+                m1=model_transform, 
+                m2=pyrr.matrix44.create_from_eulers(
+                    eulers=np.radians(self.eulers), dtype=np.float32
+                )
+            )
+        model_transform = pyrr.matrix44.multiply(
+                m1=model_transform, 
+                m2=pyrr.matrix44.create_from_translation(
+                    vec=np.array(self.position),dtype=np.float32
+                )
+            )
+        return model_transform
+
+    def update(self, rate: float) -> None:
+
+        raise NotImplementedError
+
+class Pyramid(Entity):
+
+
+    def __init__(self, position, eulers, theta = 0, phi = 0):
+        super().__init__(position=position, eulers=eulers,objectType=OBJECT_PYRAMID)
+        
         
         self.theta = theta
         self.phi = phi
         self.update_vectors()
 
-    def get_pyramid_model_matrix(self):
-        model_transform = pyrr.matrix44.create_identity(dtype=np.float32)
-        model_transform = pyrr.matrix44.multiply(
-            m1=model_transform, 
-            m2=pyrr.matrix44.create_from_eulers(
-                eulers=np.radians(self.eulers), dtype=np.float32
-            )
-        )
-        model_transform = pyrr.matrix44.multiply(
-            m1=model_transform, 
-            m2=pyrr.matrix44.create_from_translation(
-                vec=np.array(self.position),dtype=np.float32
-            )
-        )
-        return model_transform
-    
     def update_vectors(self):
+        '''
         #self.forwards = np.array([0,0,0], dtype=np.float32)
         
         self.forwards = np.array(
@@ -172,13 +205,14 @@ class Pyramid:
             ],
             dtype = np.float32
         )
-
         
         globalUp = np.array([0,0,1], dtype=np.float32)
 
         self.right = np.cross(self.forwards, globalUp)
 
         self.up = np.cross(self.right, self.forwards)
+        '''
+        pass
     
     def update(self, rate):
         self.update_vectors()
@@ -190,12 +224,10 @@ class Light:
         self.color = np.array(color, dtype=np.float32)
         self.strength = strength
 
-class Player:
+class Player(Entity):
 
-
-    def __init__(self, position):
-
-        self.position = np.array(position, dtype = np.float32)
+    def __init__(self, position, eulers=[0,0,0]):
+        super().__init__(position, eulers, OBJECT_CAMERA)
         self.theta = 0
         self.phi = 0
         #self.forwards = np.array([0,0,0], dtype=np.float32)
@@ -213,7 +245,6 @@ class Player:
             dtype = np.float32
         )
 
-        
         
         globalUp = np.array([0,0,1], dtype=np.float32)
 
@@ -262,7 +293,7 @@ class Scene:
                     
                 ],
                 strength = 2
-            ),
+            ),#BACK LEFT
             
             Light(
                 position = [
@@ -277,13 +308,13 @@ class Scene:
                     
                 ],
                 strength = 2
-            ),
+            ),#TOP RIGHT
             
             Light(
                 position = [
-                    np.random.uniform(low=-5,high=5),
-                    np.random.uniform(low=-1,high=5),
-                    np.random.uniform(low=-2.0,high=4.0)
+                    -1,
+                    1,
+                    -1
                 ],
                 color = [
                     np.random.uniform(low=0,high=1),
@@ -291,7 +322,7 @@ class Scene:
                     0,
                     
                 ],
-                strength = 4
+                strength = 2
             ),
             Light(
                 position = [
@@ -361,6 +392,7 @@ class Scene:
         We also 
         
         '''
+        #rotate the pyramid's orientation on eulers
         self.renderables[OBJECT_PYRAMID][0].eulers[1] += dTheta
         if self.renderables[OBJECT_PYRAMID][0].eulers[1] > 360:
             self.renderables[OBJECT_PYRAMID][0].eulers[1] -= 360
@@ -368,6 +400,7 @@ class Scene:
             self.renderables[OBJECT_PYRAMID][0].eulers[1] += 360
         
         reverseTheta = -1 * dTheta
+        #rotate the theta angle, which represents the forwards vector
         
         self.renderables[OBJECT_PYRAMID][0].theta += reverseTheta
         if self.renderables[OBJECT_PYRAMID][0].theta > 360:
@@ -541,7 +574,6 @@ class App:
             combo += 4
             changeTheta = -1
         
-        
         if combo > 0:
             #we need to check if W is pressed, so we actually move forward
             # so check if you are just pressing left and right
@@ -552,7 +584,6 @@ class App:
                     self.frameTime * 0.025 * np.sin(np.deg2rad(self.scene.renderables[OBJECT_PYRAMID][0].theta + directionModifier)),
                     0
                 ]
-                #print(str(dPos))
 
                 self.scene.move_pyramid(dPos)
                 
@@ -572,7 +603,7 @@ class App:
                 phi_increment = 0
                 
                 self.scene.spin_pyramid(theta_increment, phi_increment)
-            
+        
         
     def handleMouse(self):
 
@@ -652,7 +683,8 @@ class GraphicsEngine:
         
         self.materials: dict[int, Material] = {
             OBJECT_PYRAMID: Material2D("gfx/stone2.jpeg"),
-            OBJECT_SKY: MaterialCubemap("gfx/sky")
+            OBJECT_SKY: MaterialCubemap("gfx/spacesky/sky"),
+            
         }
         
         self.shaders: dict[int, int] = {
@@ -685,13 +717,13 @@ class GraphicsEngine:
     def get_uniform_locations(self):
         # get the required uniforms for the sky pipeline
         glUseProgram(self.shaders[PIPELINE_SKY])
-        self.forwardsLocation = glGetUniformLocation(
+        self.cameraForwardsLocation = glGetUniformLocation(
             self.shaders[PIPELINE_SKY], "forwards"
         )
-        self.rightLocation = glGetUniformLocation(
+        self.cameraRightLocation = glGetUniformLocation(
             self.shaders[PIPELINE_SKY], "right"
         )
-        self.upLocation = glGetUniformLocation(
+        self.cameraUpLocation = glGetUniformLocation(
             self.shaders[PIPELINE_SKY], "up"
         )
         
@@ -713,7 +745,7 @@ class GraphicsEngine:
 
         projection_transform = pyrr.matrix44.create_perspective_projection(
             fovy = 45, aspect = 640/480, 
-            near = 0.1, far = 50, dtype=np.float32
+            near = 0.1, far = 100, dtype=np.float32
         )
         glUniformMatrix4fv(
             self.projectionMatrixLocation,
@@ -737,7 +769,7 @@ class GraphicsEngine:
     def draw_objects(self, scene):
         for pyramid in scene.renderables[OBJECT_PYRAMID]:
 
-            glUniformMatrix4fv(self.modelMatrixLocation,1,GL_FALSE,pyramid.get_pyramid_model_matrix())
+            glUniformMatrix4fv(self.modelMatrixLocation,1,GL_FALSE,pyramid.get_model_transform())
             self.materials[OBJECT_PYRAMID].use()
             
             #draw triangle
@@ -755,10 +787,10 @@ class GraphicsEngine:
         glUseProgram(self.shaders[PIPELINE_SKY])
         glDisable(GL_DEPTH_TEST)
         self.materials[OBJECT_SKY].use()
-        glUniform3fv(self.forwardsLocation, 1, scene.camera.forwards)
-        glUniform3fv(self.rightLocation, 1, scene.camera.right)
+        glUniform3fv(self.cameraForwardsLocation, 1, scene.camera.forwards)
+        glUniform3fv(self.cameraRightLocation, 1, scene.camera.right)
         correction_factor = self.screenHeight / self.screenWidth
-        glUniform3fv(self.upLocation, 1, correction_factor * scene.camera.up)
+        glUniform3fv(self.cameraUpLocation, 1, correction_factor * scene.camera.up)
         
         #take points of sky, and the material (Its texture) and push the array buffer to the vertexes
         glBindVertexArray(self.meshes[OBJECT_SKY].vao)
@@ -775,6 +807,7 @@ class GraphicsEngine:
             target = scene.camera.position + scene.camera.forwards,
             up = scene.camera.up, dtype = np.float32
         )
+        view_transform_id = pyrr.matrix44.create_identity(dtype = np.float32)
         glUniformMatrix4fv(self.viewMatrixLocation, 1, GL_FALSE, view_transform)
         
         #update lighting information, we only have 1 light right now
@@ -840,18 +873,18 @@ class PyramidMesh():
             
             #front GOOD
             -1, -1, 1, 0, 1, 0, 0.4472136, 0.89442719,
-            1, -1, 1, 1, 0, 0, 0.4472136, 0.89442719,
+            1, -1, 1, 1, 1, 0, 0.4472136, 0.89442719,
             0, 1, 0, 0.5, 0, 0, 0.4472136, 0.89442719,
 
             #right side
-            1, -1, 1, 0, 1, 0.9486833, 0.31622777, 0,
-            1, -1, -1, 1, 1, 0.9486833, 0.31622777, 0,
-            0, 1, 0, 0.5, 0, 0.9486833, 0.31622777, 0,
+            1, -1, 1, 0, 1, 0.89442719, 0.4472136, 0,
+            1, -1, -1, 1, 1, 0.89442719, 0.4472136, 0,
+            0, 1, 0, 0.5, 0, 0.89442719, 0.4472136, 0,
             
             # LEFT SIDE
-            -1, -1, 1, 0, 1, -0.9486833, 0.31622777, 0,
-            -1, -1, -1, 1, 1, -0.9486833, 0.31622777, 0,
-            0, 1, 0, 0.5, 0, -0.9486833, 0.31622777, 0,
+            -1, -1, 1, 0, 1, -0.89442719, 0.4472136, 0,
+            -1, -1, -1, 1, 1, -0.89442719, 0.4472136, 0,
+            0, 1, 0, 0.5, 0, -0.89442719, 0.4472136, 0,
             
             #BACK
             -1, -1, -1, 0, 1, 0, 0.4472136, -0.89442719,
@@ -901,31 +934,30 @@ class PyramidMesh():
         v3 = [0, 1, 0]
         v4 = [-1, -1, -1]
         v5 = [1, -1, -1]
-        sides = [
-            [v1,v2,v3],
-            [v2, v3, v5],
-            [v1, v4, v3],
-            [v4, v5, v3],
-            [v1,v2,v5],
-            [v1,v4,v5]
-            
+        pyramidTriangles = [
+            [v1,v2,v3],#front CORRECT
+            [v2, v5, v3],#right CORRECT
+            [v1, v3, v4],#left CORRECT
+            [v4, v3, v5],#back CORRECT
+            [v2,v1,v5],#botright CORRECT
+            [v5,v1,v4]#bot left CORRECT
         ]
         faces = [
-            "front","right","left","back","botright","botleft"
+            "front","right","left","back","bottom right","bottom left"
         ]
         index = 0
-        for face in sides:
-            
-            A = np.subtract(face[1],face[0])
-            B = np.subtract(face[2],face[0])
-            Nx = A[1] * B[2] - A[2] * B[2]
+        # loop through every triangle that is in the pyramid
+        for triangle in pyramidTriangles:
+            #find the edge vectors
+            A = np.subtract(triangle[1],triangle[0])
+            B = np.subtract(triangle[2],triangle[0])
+            #calculate the surface normal
+            Nx = A[1] * B[2] - A[2] * B[1]
             Ny = A[2] * B[0] - A[0] * B[2]
             Nz = A[0] * B[1] - A[1] * B[0]
             print(faces[index])
-            print(normalize([[Nx, Ny, Nz]]))
+            print(normalize([[Nx, Ny, Nz]]))#don't forget to normalize!
             index += 1
-        
-        
 
     def explain_to_shader_how_to_read_buffer(self):
         '''This function uses
@@ -1041,6 +1073,7 @@ class MaterialCubemap(Material):
 
         with Image.open(f"{filepath}_bottom.png", mode = "r") as img:
             image_width,image_height = img.size
+            img = img.rotate(90)
             img = img.convert('RGBA')
             img_data = bytes(img.tobytes())
             glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z,0,GL_RGBA8,image_width,image_height,0,GL_RGBA,GL_UNSIGNED_BYTE,img_data)
@@ -1058,7 +1091,6 @@ class MaterialCubemap(Material):
             img = img.convert('RGBA')
             img_data = bytes(img.tobytes())
             glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X,0,GL_RGBA8,image_width,image_height,0,GL_RGBA,GL_UNSIGNED_BYTE,img_data)
-
 
 class Mesh:
     """ A general mesh """
