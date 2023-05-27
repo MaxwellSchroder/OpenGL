@@ -232,6 +232,7 @@ class Player(Entity):
         self.phi = 0
         #self.forwards = np.array([0,0,0], dtype=np.float32)
         self.update_vectors()
+        self.localUp = np.array([0,0,1], dtype=np.float32)
     
     def update_vectors(self):
         #self.forwards = np.array([0,0,0], dtype=np.float32)
@@ -252,13 +253,50 @@ class Player(Entity):
 
         self.up = np.cross(self.right, self.forwards)
 
+    def calculate_vectors(self) -> None:
+        """ 
+            Calculate the camera's fundamental vectors.
+
+            There are various ways to do this, this function
+            achieves it by using cross products to produce
+            an orthonormal basis.
+        """
+
+        #calculate the forwards vector directly using spherical coordinates
+        self.forwards = np.array(
+            [
+                np.cos(np.radians(self.eulers[2])) * np.cos(np.radians(self.eulers[1])),
+                np.sin(np.radians(self.eulers[2])) * np.cos(np.radians(self.eulers[1])),
+                np.sin(np.radians(self.eulers[1]))
+            ],
+            dtype=np.float32
+        )
+        self.right = pyrr.vector.normalise(np.cross(self.forwards, self.localUp))
+        self.up = pyrr.vector.normalise(np.cross(self.right, self.forwards))
+
+
     def update(self):
-        self.update_vectors()
+        self.calculate_vectors()
+    
+    def get_view_transform(self) -> np.ndarray:
+        """ Return's the camera's view transform. """
+
+        return pyrr.matrix44.create_look_at(
+            eye = self.position,
+            target = self.position + self.forwards,
+            up = self.up,
+            dtype = np.float32
+        )
 
 class Scene:
 
     def __init__(self):
+        #create pyramid, camera, and lights
+        self.create_scene_objects()
         
+        
+
+    def create_scene_objects(self):
         self.renderables: dict[int,list[Pyramid]] = {}
         self.renderables[OBJECT_PYRAMID] = [
             Pyramid(
@@ -269,15 +307,14 @@ class Scene:
             ),
         ]
 
-
         self.camera = Player(
-            position = [0,-5,0]
+            position = [0,-5,0],
+            eulers=[0,0,90]
         )
         
         #rotate to face the triangle
         # THETA = Angle off the X axis, going left
         # PHI angle UP off the Y axis
-        self.spin_camera(90,0)
         
         self.lights = [
             Light(
@@ -353,26 +390,28 @@ class Scene:
                 object.update(rate)
         
         self.camera.update()
-        
-        
+
 
     def move_camera(self, dPos):
 
         dPos = np.array(dPos, dtype = np.float32)
         self.camera.position += dPos
+    
+    def spin_camera(self, dEulers: np.ndarray) -> None:
+        """ 
+            Change the camera's euler angles by the given amount,
+            performing appropriate bounds checks.
+        """
 
-    def spin_camera(self, dTheta, dPhi):
+        self.camera.eulers += dEulers
 
-        self.camera.theta += dTheta
-        if self.camera.theta > 360:
-            self.camera.theta -= 360
-        elif self.camera.theta < 0:
-            self.camera.theta += 360
+        if self.camera.eulers[2] < 0:
+            self.camera.eulers[2] += 360
+        elif self.camera.eulers[2] > 360:
+            self.camera.eulers[2] -= 360
         
-        self.camera.phi = min(
-            89, max(-89, self.camera.phi + dPhi)
-        )
-        self.camera.update_vectors()
+        self.camera.eulers[1] = min(89, max(-89, self.camera.eulers[1]))
+
     
     def move_pyramid(self, dPos):
         dPos = np.array(dPos, dtype = np.float32)
@@ -419,7 +458,6 @@ class Scene:
             pyramid.eulers[2] += 0.25 * rate
             if pyramid.eulers[2] > 360:
                 pyramid.eulers[2] -= 360
-
 
 class App:
 
@@ -479,7 +517,11 @@ class App:
 
             self.scene.update(self.frameTime / 16.67)
             
-            self.renderer.render(self.scene)
+            self.renderer.render(
+                camera = self.scene.camera,
+                renderables = self.scene.renderables,
+                lights = self.scene.lights
+            )
 
             #timing
             self.calculateFramerate()
@@ -551,8 +593,8 @@ class App:
                 directionModifier = 315
             
             dPos = [
-                self.frameTime * 0.025 * np.cos(np.deg2rad(self.scene.camera.theta + directionModifier)),
-                self.frameTime * 0.025 * np.sin(np.deg2rad(self.scene.camera.theta + directionModifier)),
+                self.frameTime * 0.025 * np.cos(np.deg2rad(self.scene.camera.eulers[2]  + directionModifier)),
+                self.frameTime * 0.025 * np.sin(np.deg2rad(self.scene.camera.eulers[2]  + directionModifier)),
                 0
             ]
 
@@ -604,15 +646,15 @@ class App:
                 
                 self.scene.spin_pyramid(theta_increment, phi_increment)
         
-        
     def handleMouse(self):
 
         (x,y) = glfw.get_cursor_pos(self.window)
         rate = self.frameTime / 16.67
-        theta_increment = rate * ((SCREEN_WIDTH / 2) - x)
-        phi_increment = rate * ((SCREEN_HEIGHT / 2) - y)
-        self.scene.spin_camera(theta_increment, phi_increment)
-        glfw.set_cursor_pos(self.window, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2)
+        theta_increment = rate * ((self.screenWidth / 2) - x)
+        phi_increment = rate * ((self.screenHeight / 2) - y)
+        dEulers = np.array([0, phi_increment, theta_increment], dtype=np.float32)
+        self.scene.spin_camera(dEulers)
+        glfw.set_cursor_pos(self.window, self.screenWidth / 2, self.screenHeight / 2)
 
     def calculateFramerate(self):
 
@@ -631,8 +673,8 @@ class App:
         self.renderer.destroy()
 
 class GraphicsEngine:
-
-
+    
+    
     def __init__(self, screenWidth: int, screenHeight: int,
         window):
         
@@ -766,8 +808,8 @@ class GraphicsEngine:
         
         return shader
 
-    def draw_objects(self, scene):
-        for pyramid in scene.renderables[OBJECT_PYRAMID]:
+    def render_objects(self, renderables):
+        for pyramid in renderables[OBJECT_PYRAMID]:
 
             glUniformMatrix4fv(self.modelMatrixLocation,1,GL_FALSE,pyramid.get_model_transform())
             self.materials[OBJECT_PYRAMID].use()
@@ -777,51 +819,49 @@ class GraphicsEngine:
             glDrawArrays(GL_TRIANGLES, 0, self.meshes[OBJECT_PYRAMID].vertex_count)
 
             glFlush()
-
-    def render(self, scene):
-
-        #refresh screen
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+    
+    def render_background_sky(self, camera: Player):
         #push sky onto the screen
         # PUSHING VECTORS OF CAMERA INTO SHADER
         glUseProgram(self.shaders[PIPELINE_SKY])
         glDisable(GL_DEPTH_TEST)
         self.materials[OBJECT_SKY].use()
-        glUniform3fv(self.cameraForwardsLocation, 1, scene.camera.forwards)
-        glUniform3fv(self.cameraRightLocation, 1, scene.camera.right)
+        glUniform3fv(self.cameraForwardsLocation, 1, camera.forwards)
+        glUniform3fv(self.cameraRightLocation, 1, camera.right)
         correction_factor = self.screenHeight / self.screenWidth
-        glUniform3fv(self.cameraUpLocation, 1, correction_factor * scene.camera.up)
+        glUniform3fv(self.cameraUpLocation, 1, correction_factor * camera.up)
         
         #take points of sky, and the material (Its texture) and push the array buffer to the vertexes
         glBindVertexArray(self.meshes[OBJECT_SKY].vao)
         glDrawArrays(GL_TRIANGLES, 0, self.meshes[OBJECT_SKY].vertex_count)
+
+    def render(self, camera: Player, 
+        renderables: dict[int, list[Entity]],
+        lights: list[Light]) -> None:
+
+        #refresh screen
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         
-        #RE ENABLE DEPTH TEST
+        #render the background sky
+        self.render_background_sky(camera=camera)
+        
+        #RE ENABLE DEPTH TEST, RENDERING OBJECTS NOW
         glEnable(GL_DEPTH_TEST)
-        
         glUseProgram(self.shaders[PIPELINE_3D])
         
-
-        view_transform = pyrr.matrix44.create_look_at(
-            eye = scene.camera.position,
-            target = scene.camera.position + scene.camera.forwards,
-            up = scene.camera.up, dtype = np.float32
-        )
-        view_transform_id = pyrr.matrix44.create_identity(dtype = np.float32)
-        glUniformMatrix4fv(self.viewMatrixLocation, 1, GL_FALSE, view_transform)
+        # CREATE VIEW TRANSFORM FROM CAMERA
+        glUniformMatrix4fv(self.viewMatrixLocation, 1, GL_FALSE, camera.get_view_transform())
         
         #update lighting information, we only have 1 light right now
-        for i, light in enumerate(scene.lights):
+        for i, light in enumerate(lights):
 
             glUniform3fv(self.lightLocation["position"][i], 1, light.position)
             glUniform3fv(self.lightLocation["color"][i], 1, light.color)
             glUniform1f(self.lightLocation["strength"][i], light.strength)
-        glUniform3fv(self.cameraPosLocation, 1, scene.camera.position)
-            
+        glUniform3fv(self.cameraPosLocation, 1, camera.position)
 
-        self.draw_objects(scene)
+        self.render_objects(renderables)
         
-
         glFlush()
         
     def destroy(self):
