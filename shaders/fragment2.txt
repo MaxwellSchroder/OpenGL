@@ -1,0 +1,22 @@
+#version 330 core
+
+in vec2 fragmentTexCoord;
+in vec3 fragmentPosition;
+in vec3 fragmentNormal;
+
+uniform samplerCube skyTexture;
+uniform sampler2D imageTexture;
+uniform vec3 cameraPosition;
+
+out vec4 color;
+
+
+void main()
+{
+    vec3 viewerToFragment = normalize(fragmentPosition - cameraPosition);
+    vec3 reflectedRayDirection = reflect(viewerToFragment, fragmentNormal);
+    vec4 skyColor = texture(skyTexture, reflectedRayDirection);
+    vec4 baseColor = texture(imageTexture, fragmentTexCoord);
+    color =  1.5* skyColor * baseColor;
+}
+

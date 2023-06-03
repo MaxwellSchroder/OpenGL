@@ -32,6 +32,34 @@ GAME_MODE = 0
 
 ############################## helper functions ###############################
 
+def createShader(vertexFilepath: str, fragmentFilepath: str) -> int:
+    """
+        Compile and link a shader program from source.
+
+        Parameters:
+
+            vertexFilepath: filepath to the vertex shader source code (relative to this file)
+
+            fragmentFilepath: filepath to the fragment shader source code (relative to this file)
+        
+        Returns:
+
+            An integer, being a handle to the shader location on the graphics card
+    """
+
+    with open(vertexFilepath,'r') as f:
+        vertex_src = f.readlines()
+
+    with open(fragmentFilepath,'r') as f:
+        fragment_src = f.readlines()
+    
+    shader = compileProgram(compileShader(vertex_src, GL_VERTEX_SHADER),
+                            compileShader(fragment_src, GL_FRAGMENT_SHADER),
+                            validate = False
+                        )
+    
+    return shader
+
 def load_model_from_file(
     filename: str) -> list[float]:
     """ 
@@ -724,23 +752,24 @@ class GraphicsEngine:
         }
         
         self.materials: dict[int, Material] = {
-            OBJECT_PYRAMID: Material2D("gfx/stone2.jpeg"),
+            OBJECT_PYRAMID: Material2D("gfx/marble.jpeg"),
             OBJECT_SKY: MaterialCubemap("gfx/spacesky/sky"),
             
         }
         
         self.shaders: dict[int, int] = {
-            PIPELINE_SKY: self.createShader(
+            PIPELINE_SKY: createShader(
                 "shaders/vertex_sky.txt", 
                 "shaders/fragment_sky.txt"
             ),
-            PIPELINE_3D: self.createShader(
+            PIPELINE_3D: createShader(
                 "shaders/vertex.txt", 
                 "shaders/fragment.txt"
             )
         }
         
         # store struct of light as a position
+        
         self.lightLocation = {
             "position": [
                 glGetUniformLocation(self.shaders[PIPELINE_3D], f"Lights[{i}].position")
@@ -755,6 +784,7 @@ class GraphicsEngine:
                 for i in range(8)
             ],
         }
+        
 
     def get_uniform_locations(self):
         # get the required uniforms for the sky pipeline
@@ -793,24 +823,18 @@ class GraphicsEngine:
             self.projectionMatrixLocation,
             1, GL_FALSE, projection_transform
         )
-        # pass in image texture of sky to
-        glUniform1i(glGetUniformLocation(self.shaders[PIPELINE_SKY], "imageTexture"), 0)
         
+        # pass in image texture of the arrow to the arrow's shader
+        glUniform1i(
+            glGetUniformLocation(self.shaders[PIPELINE_3D], "imageTexture"), 1)
         glUniform1i(
             glGetUniformLocation(self.shaders[PIPELINE_3D], "skyTexture"), 0)
         
-    def createShader(self, vertexFilepath, fragmentFilepath):
-
-        with open(vertexFilepath,'r') as f:
-            vertex_src = f.readlines()
-
-        with open(fragmentFilepath,'r') as f:
-            fragment_src = f.readlines()
-        
-        shader = compileProgram(compileShader(vertex_src, GL_VERTEX_SHADER),
-                                compileShader(fragment_src, GL_FRAGMENT_SHADER))
-        
-        return shader
+        #the sky needs the SKY TEXTURE == 0
+        glUseProgram(self.shaders[PIPELINE_SKY])
+        glUniform1i(
+            glGetUniformLocation(self.shaders[PIPELINE_SKY], "imageTextureCube"), 0)
+    
 
     def render_objects(self, renderables):
         for pyramid in renderables[OBJECT_PYRAMID]:
@@ -855,6 +879,8 @@ class GraphicsEngine:
         
         # CREATE VIEW TRANSFORM FROM CAMERA
         glUniformMatrix4fv(self.viewMatrixLocation, 1, GL_FALSE, camera.get_view_transform())
+        glUniform3fv(self.cameraPosLocation, 1, camera.position)
+        
         
         #update lighting information, we only have 1 light right now
         for i, light in enumerate(lights):
@@ -862,8 +888,10 @@ class GraphicsEngine:
             glUniform3fv(self.lightLocation["position"][i], 1, light.position)
             glUniform3fv(self.lightLocation["color"][i], 1, light.color)
             glUniform1f(self.lightLocation["strength"][i], light.strength)
-        glUniform3fv(self.cameraPosLocation, 1, camera.position)
+        
 
+        
+        
         self.render_objects(renderables)
         
         glFlush()
@@ -1049,13 +1077,14 @@ class PyramidMesh():
 
 class Material:
 
-    def __init__(self, textureType: int):
+    def __init__(self, textureType: int, textureUnit: int):
         self.texture = glGenTextures(1)
         self.textureType = textureType
+        self.textureUnit = textureUnit
         glBindTexture(textureType, self.texture)
     
     def use(self):
-        glActiveTexture(GL_TEXTURE0)
+        glActiveTexture(GL_TEXTURE0 + self.textureUnit)
         glBindTexture(self.textureType, self.texture)
     
     def destroy(self):
@@ -1066,7 +1095,7 @@ class Material2D(Material):
     
     def __init__(self, filepath):
         
-        super().__init__(GL_TEXTURE_2D)
+        super().__init__(GL_TEXTURE_2D, 1)
         
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
@@ -1084,15 +1113,14 @@ class MaterialCubemap(Material):
 
     def __init__(self, filepath):
 
-        super().__init__(GL_TEXTURE_CUBE_MAP)
-        # 3d has S, T and R
+        super().__init__(GL_TEXTURE_CUBE_MAP, 0)
+
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE)
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
 
-        # ALL TEXTURES ARE SENT TTO THEIR APPROPRIATE TARGET e..g POS X, NEG Y, POS Z etc
         #load textures
         with Image.open(f"{filepath}_left.png", mode = "r") as img:
             image_width,image_height = img.size
