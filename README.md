@@ -19,13 +19,13 @@ The project was inspired by the "Yaka Arrow", which is Yondu's whistle-controlle
 
 **Controls:**
 
-  Arrow Controls:
-    - Up Arrow key to move forward
-    - Left and Right Arrow keys to change orientation of arrow left and right
+Arrow Controls:
+- Up Arrow key to move forward
+- Left and Right Arrow keys to change orientation of arrow left and right
 
-  Camera Controls:
-    - WASD keys to control all lateral movement
-    - Left Shift key and Space Bar key to change the height of the camera downwards and upwards, respectively
+Camera Controls:
+- WASD keys to control all lateral movement
+- Left Shift key and Space Bar key to change the height of the camera downwards and upwards, respectively
 
 **Required Python Depencies:**
 pip install PyOpenGl numpy pyrr pygame pillow scikit-learn glfw
