@@ -1,3 +1,13 @@
+''' INSTALL DEPENDENCIES/REQUIRED PACKAGES
+pip install PyOpenGl
+pip install numpy
+pip install pyrr
+pip install pygame
+pip install pillow
+pip install scikit-learn
+pip install glfw
+'''
+
 from __future__ import annotations
 from typing import Any
 import glfw
