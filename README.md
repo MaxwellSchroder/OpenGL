@@ -18,11 +18,12 @@ The project was inspired by the "Yaka Arrow", which is Yondu's whistle-controlle
 4. Run start.py
 
 **Controls:**
-Arrow Controls:
+
+  Arrow Controls:
 - Up Arrow key to move forward
 - Left and Right Arrow keys to change orientation of arrow left and right
 
-Camera Controls:
+  Camera Controls:
 - WASD keys to control all lateral movement
 - Left Shift key and Space Bar key to change the height of the camera downwards and upwards, respectively
 
